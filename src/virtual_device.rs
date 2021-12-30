@@ -5,18 +5,12 @@ use smoltcp::phy::{Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
 use std::sync::Arc;
 
-/// A virtual device that processes IP packets. IP packets received from the WireGuard endpoint
-/// are made available to this device using a channel receiver. IP packets sent from this device
-/// are asynchronously sent out to the WireGuard tunnel.
 pub struct VirtualIpDevice {
-    /// Tunnel to send IP packets to.
-    wg: Arc<WireGuardTunnel>,
-    /// Channel receiver for received IP packets.
+    pub wg: Arc<WireGuardTunnel>,
     ip_dispatch_rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
 }
 
 impl VirtualIpDevice {
-    /// Initializes a new virtual IP device.
     pub fn new(
         wg: Arc<WireGuardTunnel>,
         ip_dispatch_rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
@@ -24,7 +18,6 @@ impl VirtualIpDevice {
         Self { wg, ip_dispatch_rx }
     }
 
-    /// Registers a virtual IP device for a single virtual client.
     pub fn new_direct(virtual_port: VirtualPort, wg: Arc<WireGuardTunnel>) -> anyhow::Result<Self> {
         let (ip_dispatch_tx, ip_dispatch_rx) = tokio::sync::mpsc::channel(DISPATCH_CAPACITY);
 

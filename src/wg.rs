@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::Context;
 use boringtun::noise::{Tunn, TunnResult};
 use log::Level;
-use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket, UdpPacket};
+use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 
@@ -118,40 +118,39 @@ impl WireGuardTunnel {
     }
 
     /// WireGuard Routine task. Handles Handshake, keep-alive, etc.
-    pub async fn routine_task(&self) -> ! {
-        trace!("Starting WireGuard routine task");
-
-        loop {
-            let mut send_buf = [0u8; MAX_PACKET];
-            match self.peer.update_timers(&mut send_buf) {
-                TunnResult::WriteToNetwork(packet) => {
-                    debug!(
-                        "Sending routine packet of {} bytes to WireGuard endpoint",
-                        packet.len()
-                    );
-                    match self.udp.send_to(packet, self.endpoint).await {
-                        Ok(_) => {}
-                        Err(e) => {
-                            error!(
-                                "Failed to send routine packet to WireGuard endpoint: {:?}",
-                                e
-                            );
-                        }
-                    };
-                }
-                TunnResult::Err(e) => {
-                    error!(
-                        "Failed to prepare routine packet for WireGuard endpoint: {:?}",
-                        e
-                    );
-                }
-                TunnResult::Done => {
-                    // Sleep for a bit
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-                other => {
-                    warn!("Unexpected WireGuard routine task state: {:?}", other);
-                }
+    pub async fn routine_task(&self) -> anyhow::Result<()> {
+        let mut send_buf = [0u8; MAX_PACKET];
+        match self.peer.update_timers(&mut send_buf) {
+            TunnResult::WriteToNetwork(packet) => {
+                debug!(
+                    "Sending routine packet of {} bytes to WireGuard endpoint",
+                    packet.len()
+                );
+                self.udp
+                    .send_to(packet, self.endpoint)
+                    .await
+                    .with_context(|| "Failed to send routine packet to WireGuard endpoint.")
+                    .and_then(|_| Ok(()))
+            }
+            TunnResult::Err(e) => {
+                // todo: recover from this
+                error!(
+                    "Failed to prepare routine packet for WireGuard endpoint: {:?}",
+                    e
+                );
+                Err(anyhow::anyhow!(
+                    "Failed to prepare routine packet for WireGuard endpoint: {:?}",
+                    e
+                ))
+            }
+            TunnResult::Done => {
+                // Sleep for a bit
+                tokio::time::sleep(Duration::from_millis(1)).await;
+                Ok(())
+            }
+            other => {
+                warn!("Unexpected WireGuard routine task state: {:?}", other);
+                Ok(())
             }
         }
     }
@@ -267,36 +266,43 @@ impl WireGuardTunnel {
     /// Makes a decision on the handling of an incoming IP packet.
     fn route_ip_packet(&self, packet: &[u8]) -> RouteResult {
         match IpVersion::of_packet(packet) {
-            Ok(IpVersion::Ipv4) => Ipv4Packet::new_checked(&packet)
-                .ok()
-                // Only care if the packet is destined for this tunnel
-                .filter(|packet| Ipv4Addr::from(packet.dst_addr()) == self.source_peer_ip)
-                .map(|packet| match packet.protocol() {
-                    IpProtocol::Tcp => Some(self.route_tcp_segment(packet.payload())),
-                    IpProtocol::Udp => Some(self.route_udp_datagram(packet.payload())),
-                    // Unrecognized protocol, so we cannot determine where to route
-                    _ => Some(RouteResult::Drop),
-                })
-                .flatten()
-                .unwrap_or(RouteResult::Drop),
-            Ok(IpVersion::Ipv6) => Ipv6Packet::new_checked(&packet)
-                .ok()
-                // Only care if the packet is destined for this tunnel
-                .filter(|packet| Ipv6Addr::from(packet.dst_addr()) == self.source_peer_ip)
-                .map(|packet| match packet.next_header() {
-                    IpProtocol::Tcp => Some(self.route_tcp_segment(packet.payload())),
-                    IpProtocol::Udp => Some(self.route_udp_datagram(packet.payload())),
-                    // Unrecognized protocol, so we cannot determine where to route
-                    _ => Some(RouteResult::Drop),
-                })
-                .flatten()
-                .unwrap_or(RouteResult::Drop),
+            Ok(IpVersion::Ipv4) => {
+                Ipv4Packet::new_checked(&packet)
+                    .ok()
+                    // Only care if the packet is destined for this tunnel
+                    .filter(|packet| Ipv4Addr::from(packet.dst_addr()) == self.source_peer_ip)
+                    .map(|packet| match packet.protocol() {
+                        IpProtocol::Tcp => Some(self.route_tcp_segment(packet.payload())),
+                        // Unrecognized protocol, so we cannot determine where to route
+                        _ => Some(RouteResult::Drop),
+                    })
+                    .flatten()
+                    .unwrap_or(RouteResult::Drop)
+            }
+            Ok(IpVersion::Ipv6) => {
+                Ipv6Packet::new_checked(&packet)
+                    .ok()
+                    // Only care if the packet is destined for this tunnel
+                    .filter(|packet| Ipv6Addr::from(packet.dst_addr()) == self.source_peer_ip)
+                    .map(|packet| match packet.next_header() {
+                        IpProtocol::Tcp => Some(self.route_tcp_segment(packet.payload())),
+                        // Unrecognized protocol, so we cannot determine where to route
+                        _ => Some(RouteResult::Drop),
+                    })
+                    .flatten()
+                    .unwrap_or(RouteResult::Drop)
+            }
             _ => RouteResult::Drop,
         }
     }
 
     /// Makes a decision on the handling of an incoming TCP segment.
     fn route_tcp_segment(&self, segment: &[u8]) -> RouteResult {
+        debug!(
+            "route_tcp_segment called with segment of {} bytes",
+            segment.len()
+        );
+
         TcpPacket::new_checked(segment)
             .ok()
             .map(|tcp| {
@@ -310,24 +316,6 @@ impl WireGuardTunnel {
                     RouteResult::Drop
                 } else {
                     RouteResult::Sink
-                }
-            })
-            .unwrap_or(RouteResult::Drop)
-    }
-
-    /// Makes a decision on the handling of an incoming UDP datagram.
-    fn route_udp_datagram(&self, datagram: &[u8]) -> RouteResult {
-        UdpPacket::new_checked(datagram)
-            .ok()
-            .map(|udp| {
-                if self
-                    .virtual_port_ip_tx
-                    .get(&VirtualPort(udp.dst_port(), PortProtocol::Udp))
-                    .is_some()
-                {
-                    RouteResult::Dispatch(VirtualPort(udp.dst_port(), PortProtocol::Udp))
-                } else {
-                    RouteResult::Drop
                 }
             })
             .unwrap_or(RouteResult::Drop)
