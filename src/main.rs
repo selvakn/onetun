@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-async fn start_wireguard(config: &Config) -> anyhow::Result<()> {
+pub async fn start_wireguard(config: &Config) -> anyhow::Result<()> {
     let wg = WireGuardTunnel::new(config)
         .await
         .with_context(|| "Failed to initialize WireGuard tunnel")?;

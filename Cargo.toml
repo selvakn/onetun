@@ -3,6 +3,14 @@ name = "wg-port-forward"
 version = "0.0.1"
 edition = "2018"
 
+[lib]
+crate-type = ["lib", "staticlib", "dylib"]
+path = "src/main.rs"
+
+[[bin]]
+name = "wg-port-forward"
+path = "src/main.rs"
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
