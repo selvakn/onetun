@@ -176,17 +176,7 @@ fn parse_mtu(s: Option<&str>) -> anyhow::Result<usize> {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum PortProtocol {
     Tcp,
-}
-
-impl TryFrom<&str> for PortProtocol {
-    type Error = anyhow::Error;
-
-    fn try_from(value: &str) -> anyhow::Result<Self> {
-        match value.to_uppercase().as_str() {
-            "TCP" => Ok(Self::Tcp),
-            _ => Err(anyhow::anyhow!("Invalid protocol specifier: {}", value)),
-        }
-    }
+    Icmp,
 }
 
 impl Display for PortProtocol {
@@ -196,6 +186,7 @@ impl Display for PortProtocol {
             "{}",
             match self {
                 Self::Tcp => "TCP",
+                Self::Icmp => "Icmp",
             }
         )
     }

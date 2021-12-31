@@ -22,4 +22,5 @@ smoltcp = { version = "0.8.0" }
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1.51"
 dashmap = "4.0.2"
+env_logger = "0.9.0"
 

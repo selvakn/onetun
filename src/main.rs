@@ -24,6 +24,8 @@ const MAX_PACKET: usize = 65536;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    env_logger::init();
+
     let config = Config::from_args().with_context(|| "Failed to read config")?;
 
     loop {

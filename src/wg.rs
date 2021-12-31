@@ -4,7 +4,7 @@ use std::time::Duration;
 use anyhow::Context;
 use boringtun::noise::{Tunn, TunnResult};
 use log::Level;
-use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket};
+use smoltcp::wire::{IpProtocol, IpVersion, Ipv4Packet, Ipv6Packet, TcpPacket, Icmpv4Packet, Icmpv4Repr};
 use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 
@@ -273,6 +273,7 @@ impl WireGuardTunnel {
                     .filter(|packet| Ipv4Addr::from(packet.dst_addr()) == self.source_peer_ip)
                     .map(|packet| match packet.protocol() {
                         IpProtocol::Tcp => Some(self.route_tcp_segment(packet.payload())),
+                        IpProtocol::Icmp => Some(self.route_icmp_packet(packet.payload())),
                         // Unrecognized protocol, so we cannot determine where to route
                         _ => Some(RouteResult::Drop),
                     })
@@ -296,6 +297,19 @@ impl WireGuardTunnel {
         }
     }
 
+    fn route_icmp_packet(&self, segment: &[u8]) -> RouteResult {
+        debug!(
+            "route_icmp_packet called with segment of {} bytes",
+            segment.len()
+        );
+
+        Icmpv4Packet::new_checked(segment)
+            .ok()
+            .map(|icmp| {
+                    RouteResult::Dispatch(VirtualPort(0, PortProtocol::Icmp))
+            })
+            .unwrap_or(RouteResult::Drop)
+    }
     /// Makes a decision on the handling of an incoming TCP segment.
     fn route_tcp_segment(&self, segment: &[u8]) -> RouteResult {
         debug!(

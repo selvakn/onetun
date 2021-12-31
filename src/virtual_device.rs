@@ -1,3 +1,4 @@
+use crate::config::PortProtocol;
 use crate::virtual_iface::VirtualPort;
 use crate::wg::{WireGuardTunnel, DISPATCH_CAPACITY};
 use anyhow::Context;
@@ -18,8 +19,17 @@ impl VirtualIpDevice {
         Self { wg, ip_dispatch_rx }
     }
 
-    pub fn new_direct(virtual_port: VirtualPort, wg: Arc<WireGuardTunnel>) -> anyhow::Result<Self> {
+    pub fn new_direct(
+        virtual_port: VirtualPort,
+        enable_icmp: bool,
+        wg: Arc<WireGuardTunnel>,
+    ) -> anyhow::Result<Self> {
         let (ip_dispatch_tx, ip_dispatch_rx) = tokio::sync::mpsc::channel(DISPATCH_CAPACITY);
+
+        if enable_icmp {
+            wg.register_virtual_interface(VirtualPort(0, PortProtocol::Icmp), ip_dispatch_tx.clone())
+                .with_context(|| "Failed to register IP dispatch for virtual interface")?;
+        }
 
         wg.register_virtual_interface(virtual_port, ip_dispatch_tx)
             .with_context(|| "Failed to register IP dispatch for virtual interface")?;

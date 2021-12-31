@@ -49,7 +49,7 @@ impl VirtualInterfacePoll for TcpVirtualInterface {
         let mut receiver_rx = self.receiver_rx;
         let wg = self.wg.clone();
 
-        let device = VirtualIpDevice::new_direct(VirtualPort(self.port, PortProtocol::Tcp), self.wg)
+        let device = VirtualIpDevice::new_direct(VirtualPort(self.port, PortProtocol::Tcp), true, self.wg)
             .with_context(|| "Failed to create virtual IP device")?;
 
         let mut virtual_interface = InterfaceBuilder::new(device, vec![])
