@@ -1,4 +1,3 @@
-use std::convert::TryFrom;
 use std::fmt::{Display, Formatter};
 use std::fs::read_to_string;
 use std::net::{IpAddr, SocketAddr, ToSocketAddrs};
